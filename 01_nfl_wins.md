@@ -1,20 +1,18 @@
----
-title: "Exploring Wins With nflscrapR"
-author: "Austin Ryan | @packeRanalytics"
-date: "May 17, 2020"
+--- 
 output:
   html_document:
     keep_md: true
-    theme: united
-compact-title: false
-
-
 ---
-#What can 11 seasons worth of play-by-play data and some math tell us about what wins games in the NFL? 
+
+# Exploring Wins with nflscrapR
+Austin Ryan | @packeRanalytics
+May 17, 2020
+
+What can 11 seasons worth of play-by-play data and some math tell us about what wins games in the NFL? 
 
 Let's start with some simple linear regressions using metrics we can easily compute with nflscrapR and nflfastR data.
 
-##Simple Linear Regression
+### Simple Linear Regression
 
 
 ![](01_nfl_wins_files/figure-html/unnamed-chunk-2-1.png)<!-- -->
@@ -28,12 +26,12 @@ Offensive and defensive rushing efficiency metrics only explain about 15 and 8% 
 
 
 
-## Random Forest Variable Importance
+### Random Forest Variable Importance
 We can also build a random forest model and let the model tell us what features yield the most information gain. Again the passing efficiency is the largest driver of wins and it is not particularly close.
 
 ![](01_nfl_wins_files/figure-html/unnamed-chunk-4-1.png)<!-- -->
 
-## Multiple Linear Regression
+### Multiple Linear Regression
 We know offensive and defensive EPA per dropback metrics are useful for explaining season win totals. Just for fun make a linear regression model that uses EPA per dropback and per rush for both sides of the ball. This regression explains 77% of the variation in season wins. 
 
 We can use the regression formula to develop expected wins based on EPA per play metrics. The distribution of actual wins minus expected wins is normally distributed with a mean of 0 and a standard deviation of 1.5 wins. 
@@ -44,7 +42,7 @@ This means 68% of the season win totals from 2009-2019 are plus or minus 1.5 win
 
 ![](01_nfl_wins_files/figure-html/unnamed-chunk-6-1.png)<!-- -->
 
-##What does this mean for the 2020 season?
+### What does this mean for the 2020 season?
 Looking at prior teams in the right tail (those who over performed by more than 2.5 wins) we see that on average their average wins dropped by 1.7 games in the next season. 
 
 In the left tail we see that teams who under performed by more than 2.5 wins increased their average wins by 2.4 games the next season. 
@@ -62,7 +60,7 @@ On the other end of the spectrum the Cowboys produced EPA per play metrics that 
 
 
 
-# Other findings that should surprise no one
+### Other findings that should surprise no one
 The difference between actual and expected wins is largely a function of how a team performs in one score games and on special teams performance. Record in one score games isn't very stable year over year for the most part, however, a few teams did consistently out or over perform their expected wins. 
 
 Of the 352 season long performances in the data only 24 teams under performed by more than 2.35 wins. The Chargers account for 25% of those seasons.
