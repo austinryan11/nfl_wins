@@ -1,0 +1,464 @@
+---
+title: "Exploring Wins With nflscrapR"
+author: "Austin Ryan | @packeRanalytics"
+date: "May 17, 2020"
+output:
+  html_document:
+    keep_md: true
+    theme: united
+compact-title: false
+
+
+---
+#What can 11 seasons worth of play-by-play data and some math tell us about what wins games in the NFL? 
+
+Let's start with some simple linear regressions using metrics we can easily compute with nflscrapR and nflfastR data.
+
+##Simple Linear Regression
+```{r echo=FALSE, warning = FALSE, message=FALSE}
+# Load libraries
+  library(tidyverse)
+  library(na.tools)
+  library(tidymodels)
+  library(ggplot2)
+  library(car)
+  library(ggimage)
+  library(moments)
+
+# Read in play by play data from 2008 to 2019
+  pbp <- readRDS("2008-2019_pbp_raw.rds")  
+
+# Gather offense stats for 2008 to 2019 regular season games
+  offense <- pbp %>% 
+    filter(season_type == "REG" & season > 2007 & !is.na(epa) & !is.na(posteam) &
+             (rush == 1 | pass == 1)) %>% 
+    group_by(posteam, season) %>% 
+    summarize(
+      n_pass = sum(pass),
+      n_rush = sum(rush),
+      pass_yards = sum(yards_gained*pass, na.rm = TRUE),
+      rush_yards = sum(yards_gained*rush, na.rm = TRUE),
+      #yards = sum(yards_gained * play, na.rm = TRUE),
+      epa_per_pass = sum(epa*pass)/n_pass,
+      epa_per_rush = sum(epa*rush)/n_rush,
+      success_per_pass = sum(pass*epa>0)/n_pass,
+      success_per_rush = sum(rush*epa>0)/n_rush,
+      #off_epa = mean(epa),
+      y_per_pass = sum(yards_gained*pass, na.rm = TRUE)/n_pass,
+      y_per_rush = sum(yards_gained*rush, na.rm = TRUE)/n_rush
+      #y_per_play = mean(yards_gained, na.rm = TRUE)
+    )
+  
+# Defense stats for 2008 to 2019 regular season games
+  defense <- pbp %>%
+    filter(season_type == "REG" & season > 2007 & !is.na(epa) & !is.na(defteam) &
+             (rush == 1 | pass == 1)) %>% 
+    group_by(defteam, season)%>%
+    summarize(
+      def_n_pass=sum(pass),
+      def_n_rush=sum(rush),
+      def_pass_yards = sum(yards_gained * pass, na.rm = TRUE),
+      def_rush_yards = sum(yards_gained * rush, na.rm = TRUE),
+      #def_yards = sum(yards_gained * play, na.rm = TRUE),
+      def_epa_per_pass=sum(-epa*pass)/def_n_pass,
+      def_epa_per_rush=sum(-epa*rush)/def_n_rush,
+      def_success_per_pass=sum(pass*epa>0)/def_n_pass,
+      def_success_per_rush=sum(rush*epa>0)/def_n_rush,
+      #def_epa=mean(-epa),
+      def_y_per_pass = sum(yards_gained*pass, na.rm = TRUE)/def_n_pass,
+      def_y_per_rush = sum(yards_gained*rush, na.rm = TRUE)/def_n_rush
+      #def_y_per_play = mean(yards_gained, na.rm = TRUE)
+    ) 
+  
+# Read in wins data
+  wins <- readRDS("2008-2019_wins.rds")
+  
+# Create new dataframe with summarized offensive and defensive statistics with wins data
+  df <- wins %>% 
+    left_join(offense, by = c("team" = "posteam", "season" = "season")) %>% 
+    left_join(defense, by = c("team" = "defteam", "season" = "season"))
+  
+  df$n_pass <- NULL
+  df$n_rush <- NULL
+  df$def_n_pass <- NULL
+  df$def_n_rush <- NULL  
+
+# Get rid of dataframes
+  rm(offense, defense, wins)
+
+# Source linear regression code
+  source("regression_code.R")  
+
+# Create simple linear regression based on all variables of interest and store r squared
+# value of each fit in dataframe called r_squareds
+  
+  # Create empty df
+    r_squareds <- c()
+
+  # Loop through variables and store results
+    for(i in 7:22) {
+      input = colnames(df)[i]
+      fit <- lm(data = df, win ~ get(input))
+      crit <- aa_critique_fit(fit)
+      r2 <- crit$R2
+      r_squareds = rbind(r_squareds, data.frame(input, r2))
+    }
+    
+  # Add column with friendlier looking name
+    r_squareds$metric <- r_squareds$input
+    levels(r_squareds$metric) <- c("Pass Yards", "Rush Yards", "EPA per Dropback", 
+                           "EPA per Rush", "Success Rate per Dropback",
+                           "Success Rate per Rush", "Yards per Dropback",
+                           "Yards per Rush", "Pass Yards Allowed",
+                           "Rush Yards Allowed", "Def EPA per Dropback",
+                           "Def EPA per Rush", "Def Success Rate per Dropback",
+                           "Def Success Rate per Rush", "Def Yards per Dropback",
+                           "Def Yards per Rush")
+    
+
+# Plot r squareds of simple linear regressions
+    p1 <- r_squareds %>% 
+      ggplot(aes(x = reorder(metric, r2), y = r2)) +
+      geom_bar(stat = "identity", fill = "royal blue") +
+      coord_flip() +
+      labs(
+        title = "R-Squared of Simple Linear Regressions",
+        subtitle = "Wins Regressed on Individual Metrics | 2009 to 2019 NFL Seasons",
+        x = element_blank(),
+        y = "R-Squared",
+        caption = "Data from @nflscrapR & @nflfastR"
+      ) +
+      theme(
+        plot.title = element_text(size = 18,
+                                  hjust = 0.5,
+                                  face = "bold",
+                                  color = "black"),
+        plot.subtitle = element_text(size = 12,
+                                     hjust = 0.5,
+                                     color = "black"),
+        axis.title = element_text(size = 12,
+                                  color = "black"),
+        axis.text = element_text(size = 10,
+                                 color = "black"))
+```
+
+```{r echo=FALSE, warning=FALSE}
+p1
+```
+
+We can see passing efficiency metrics have the strongest relationships with wins. Furthermore, offensive passing efficiency metrics have stronger relationships than defensive passing metrics do. 
+
+A team's expected points added per dropback explains nearly half of the variation in their season win total. Whereas defensive expected points added per dropback explain about 30% of the variation in wins. 
+
+Offensive and defensive rushing efficiency metrics only explain about 15 and 8% of the variation in wins respectively. 
+
+```{r echo=FALSE}
+# Build basic random forest model
+    crs <- c()
+    crs$dataset <-df
+    
+    set.seed(12)  
+    crs$nobs <- nrow(crs$dataset)
+    crs$train <- sample(crs$nobs, 0.7*crs$nobs)
+    
+    crs$nobs %>% 
+      seq_len() %>% 
+      setdiff(crs$train) ->
+      crs$test
+    
+    crs$input     <- c("pass_yards", "rush_yards", "epa_per_pass",
+                       "epa_per_rush", "success_per_pass",
+                       "success_per_rush", "y_per_pass", "y_per_rush",
+                       "def_pass_yards", "def_rush_yards",
+                       "def_epa_per_pass", "def_epa_per_rush",
+                       "def_success_per_pass", "def_success_per_rush",
+                       "def_y_per_pass", "def_y_per_rush")
+    
+    crs$numeric   <- c("pass_yards", "rush_yards", "epa_per_pass",
+                       "epa_per_rush", "success_per_pass",
+                       "success_per_rush", "y_per_pass", "y_per_rush",
+                       "def_pass_yards", "def_rush_yards",
+                       "def_epa_per_pass", "def_epa_per_rush",
+                       "def_success_per_pass", "def_success_per_rush",
+                       "def_y_per_pass", "def_y_per_rush")
+    
+    crs$categoric <- NULL
+    
+    crs$target    <- "win"
+    crs$risk      <- NULL
+    crs$ident     <- NULL
+    crs$ignore    <- c("team", "season", "loss", "tie", "point_diff")
+    crs$weights   <- NULL
+  
+    crs$rf <- randomForest::randomForest(win ~ .,
+                                         data=crs$dataset[crs$train, c(crs$input, crs$target)], 
+                                         ntree=500,
+                                         mtry=16,
+                                         importance=TRUE,
+                                         na.action=randomForest::na.roughfix,
+                                         replace=FALSE)
+    
+    
+    rf_imp <- as.data.frame(crs$rf$importance)
+
+    rf_imp$metric <- r_squareds$metric
+    
+    p2 <- rf_imp %>% 
+      ggplot(aes(x = reorder(metric, IncNodePurity), y = IncNodePurity)) +
+      geom_bar(stat = "identity", fill = "royal blue") +
+      coord_flip() +
+      labs(
+        title = "NFL Season Wins Variable Importance",
+        subtitle = "Random Forest Model | 2009 to 2019 NFL Seasons",
+        x = element_blank(),
+        y = "Variable Importance Score",
+        caption = "Data from @nflscrapR & @nflfastR"
+      ) +
+      theme(
+        plot.title = element_text(size = 18,
+                                  hjust = 0.5,
+                                  face = "bold",
+                                  color = "black"),
+        plot.subtitle = element_text(size = 12,
+                                     hjust = 0.5,
+                                     color = "black"),
+        axis.title = element_text(size = 14,
+                                  color = "black"),
+        axis.text = element_text(size = 10,
+                                 color = "black"))
+```
+
+
+## Random Forest Variable Importance
+We can also build a random forest model and let the model tell us what features yield the most information gain. Again the passing efficiency is the largest driver of wins and it is not particularly close.
+
+```{r echo=FALSE, warning=FALSE}
+p2
+```
+
+## Multiple Linear Regression
+We know offensive and defensive EPA per dropback metrics are useful for explaining season win totals. Just for fun make a linear regression model that uses EPA per dropback and per rush for both sides of the ball. This regression explains 77% of the variation in season wins. 
+
+We can use the regression formula to develop expected wins based on EPA per play metrics. The distribution of actual wins minus expected wins is normally distributed with a mean of 0 and a standard deviation of 1.5 wins. 
+
+This means 68% of the season win totals from 2009-2019 are plus or minus 1.5 wins from what our expected wins formula predicts. Furthermore, 95% of the season win totals are within 3 games of what we would predict. Put another way, it is rare for a team to out or underperform their expected wins by more than 3 games.
+
+```{r echo=FALSE}
+# Use all epa metrics to predict wins
+  fit <- lm(data = df, win ~ epa_per_pass + epa_per_rush + def_epa_per_pass +
+              def_epa_per_rush)
+  crit <- aa_critique_fit(fit)
+  #crit$summary  
+  #crit$residual_plot
+  #crit$residual_histogram
+    
+# Use epa model to predict wins
+  df$pred <- predict(fit, type = "response")
+  df$var <- df$win - df$pred
+    
+# See distribution of actual wins minus expected wins
+  p3 <- df %>% 
+    ggplot(aes(var)) +
+    geom_density(color = "royal blue", size = 2) +
+    labs(
+      title = "Distribution of Actual minus Expected Wins",
+      subtitle = "Expected wins based on season EPA metrics | 2009 to 2019 Seasons",
+      x = element_blank(),
+      y = element_blank(),
+      caption = "Data from @nflscrapR & @nflfastR"
+    ) +
+    theme(
+      plot.title = element_text(size = 20,
+                                hjust = 0.5,
+                                face = "bold",
+                                color = "black"),
+      plot.subtitle = element_text(size = 14,
+                                   hjust = 0.5,
+                                   color = "black"),
+      axis.text = element_text(size = 14,
+                               color = "black"))
+  
+  
+# The variance of actual minus expected wins seems to be normally distributed
+  # What is the kurtosis?
+  
+  #kurtosis(df$var)
+  
+# Kurtosis of 2.9, normal distribution would be 3.
+  # So this distribution has a little less mass in the tails as normal distribution
+  
+# Lets visualize the areas of tails two standard deviations away from the mean
+  mean <- mean(df$var)
+  sd_pos <- mean + (2 * sd(df$var))  
+  sd_neg <- mean - (2 * sd(df$var))  
+  sd_pos_area <- ggplot_build(p3)$data[[1]] %>% 
+    filter(x > sd_pos)
+  sd_neg_area <- ggplot_build(p3)$data[[1]] %>% 
+    filter(x < sd_neg)
+  
+  p4 <- p3 +
+    geom_area(data = sd_pos_area, aes(x = x, y = y), fill = "pink", alpha = 0.5) +
+    geom_area(data = sd_neg_area, aes(x = x, y = y), fill = "pink", alpha = 0.5)
+```
+
+```{r echo=FALSE, warning=FALSE}
+p4
+```
+
+##What does this mean for the 2020 season?
+Looking at prior teams in the right tail (those who over performed by more than 2.5 wins) we see that on average their average wins dropped by 1.7 games in the next season. 
+
+In the left tail we see that teams who under performed by more than 2.5 wins increased their average wins by 2.4 games the next season. 
+
+If we look at teams who over performed by more than 2 games we see their wins drop on average by 2.1 games the next season. Conversely, teams who under perform by more than 2 games increase their wins the next season by 2.9 games on average.
+
+How did expected and actual wins look in 2019?
+```{r echo=FALSE}
+# Read in Lee's logos and colors
+  df_logo_colors <- readRDS("df_logo_colors.rds")
+  
+  df <- df %>% 
+    inner_join(df_logo_colors, by = c("team" = "team"))
+  
+# Create function for plotting actual and expected wins for a season
+  plot_function <- function(df, szn) {
+    df <- df %>% 
+      filter(season == szn) %>% 
+      arrange(-var)
+    
+    df$team <- factor(df$team, levels = df$team)
+    
+    df %>% 
+      ggplot(aes(x = reorder(team, var), y = var)) +
+      geom_bar(stat = "identity", aes(color = team, fill = team), show.legend = FALSE) +
+      geom_image(aes(image = team_logo), size = 0.03, asp = 16/9) +
+      scale_color_manual(values = df$color2) +
+      scale_fill_manual(values = df$color) +
+      labs(caption = "Data from @nflscrapR & @nflfastR",
+           title = paste(szn, "Actual Wins over Expected Wins"),
+           subtitle = "Expected wins based on season EPA metrics",
+           x = element_blank(),
+           y = element_blank()) +
+      theme(axis.title = element_text(size = 18,
+                                      color = "black"),
+            plot.subtitle = element_text(size = 18, 
+                                         hjust = .5,
+                                         color = "black"),
+            axis.text = element_text(size = 14,
+                                     color = "black"),
+            plot.title = element_text(size = 24, 
+                                      hjust = 0.5,
+                                      face = "bold",
+                                      color = "black"),
+            plot.caption = element_text(size = 12,
+                                        color = "black"),
+            panel.background = element_rect(fill = "white",
+                                            color = "black",
+                                            size = 0.5),
+            plot.background = element_rect(fill = "white")) +
+      coord_flip() +
+      theme(axis.title.y = element_blank()) +
+      theme(axis.text.y = element_blank()) + 
+      scale_y_continuous(breaks = c(-4:4))
+  }
+  
+  p5 <- plot_function(df, 2019)
+```
+
+```{r echo=FALSE, warning=FALSE}
+p5
+```
+
+Based on our expected wins formula the NFC North champs were predicted to have 10 wins while they actual won 13. Additionally, the team they beat to get to the NFC Championship looked more like an 8 win team rather than an 11 win team. 
+
+On the other end of the spectrum the Cowboys produced EPA per play metrics that predicted an 11 win team, however, they ended up 3 wins short. Detroit also came up nearly 3 wins short of what was expected.
+
+```{r echo=FALSE}
+# Let's add wins for next season to df
+  df <- arrange(df, team, season) %>% 
+    mutate(
+      lead_wins = lead(win),
+      change_wins = lead_wins - win
+    )
+  
+  left_tail <- df %>% 
+    filter(var <= -2 & season != 2019) 
+  
+  #mean(left_tail$change_wins)
+  
+  right_tail <- df %>% 
+    filter(var >= 2 & season != 2019)
+  
+  #mean(right_tail$change_wins)
+  
+# Function to plot actual minus expected wins for a team over the years
+  plot_function2 <- function(df, tm) {
+    df <- df %>% 
+      filter(team == tm) %>% 
+      arrange(-var)
+    
+    df %>% 
+      ggplot(aes(x = reorder(season, var), y = var)) +
+      geom_bar(stat = "identity", aes(color = team, fill = team), show.legend = FALSE) +
+      geom_image(aes(image = team_logo), size = 0.03, asp = 16/9) +
+      scale_color_manual(values = df$color2) +
+      scale_fill_manual(values = df$color) +
+      labs(caption = "Data from @nflscrapR & @nflfastR",
+           title = paste(tm, "Actual Wins over Expected Wins"),
+           subtitle = "Expected wins based on season EPA metrics",
+           x = element_blank(),
+           y = element_blank()) +
+      theme(axis.title = element_text(size = 18,
+                                      color = "black"),
+            plot.subtitle = element_text(size = 18, 
+                                         hjust = .5,
+                                         color = "black"),
+            axis.text = element_text(size = 14,
+                                     color = "black"),
+            plot.title = element_text(size = 24, 
+                                      hjust = 0.5,
+                                      face = "bold",
+                                      color = "black"),
+            plot.caption = element_text(size = 12,
+                                        color = "black"),
+            panel.background = element_rect(fill = "white",
+                                            color = "black",
+                                            size = 0.5),
+            plot.background = element_rect(fill = "white")) +
+      coord_flip() +
+      theme(axis.title.y = element_blank()) +
+      theme(axis.text.y = element_blank()) + 
+      scale_y_continuous(breaks = c(-4:4)) +
+      geom_text(aes(label = season, color = color2, fontface = "bold", size = 14),
+                position = position_stack(.5), show.legend = FALSE)
+  }
+  
+  p6 <- plot_function2(df, "LAC")
+
+  p7 <- plot_function2(df, "CLE")
+  
+  p8 <- plot_function2(df, "NE")
+
+```
+
+# Other findings that should surprise no one
+The difference between actual and expected wins is largely a function of how a team performs in one score games and on special teams performance. Record in one score games isn't very stable year over year for the most part, however, a few teams did consistently out or over perform their expected wins. 
+
+Of the 352 season long performances in the data only 24 teams under performed by more than 2.35 wins. The Chargers account for 25% of those seasons.
+
+```{r echo=FALSE}
+p6
+```
+
+
+The Browns have only over performed in one season.
+```{r echo=FALSE}
+p7
+```
+
+
+
+On the other end of the spectrum the Patriots have only underperformed by more than 1 game once.
+```{r echo=FALSE}
+p8
+```
